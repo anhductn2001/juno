@@ -98,6 +98,7 @@ import (
 	tmjson "github.com/tendermint/tendermint/libs/json"
 
 	"github.com/CosmosContracts/juno/v11/x/globalfee"
+	globalfeetypes "github.com/CosmosContracts/juno/v11/x/globalfee/types"
 
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmclient "github.com/CosmWasm/wasmd/x/wasm/client"
@@ -105,7 +106,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	ica "github.com/cosmos/ibc-go/v3/modules/apps/27-interchain-accounts"
-	icacontrollertypes "github.com/cosmos/ibc-go/v3/modules/apps/27-interchain-accounts/controller/types"
 	icahost "github.com/cosmos/ibc-go/v3/modules/apps/27-interchain-accounts/host"
 	icahostkeeper "github.com/cosmos/ibc-go/v3/modules/apps/27-interchain-accounts/host/keeper"
 	icahosttypes "github.com/cosmos/ibc-go/v3/modules/apps/27-interchain-accounts/host/types"
@@ -629,9 +629,6 @@ func New(
 	app.MountTransientStores(tkeys)
 	app.MountMemoryStores(memKeys)
 
-	// register upgrade
-	app.RegisterUpgradeHandlers(cfg)
-
 	bypassMinFeeMsgTypes := cast.ToStringSlice(appOpts.Get(BypassMinFeeMsgTypesKey))
 	if bypassMinFeeMsgTypes == nil {
 		bypassMinFeeMsgTypes = GetDefaultBypassFeeMessages()
@@ -673,14 +670,18 @@ func New(
 		}
 	}
 
+	// register upgrade
+	app.RegisterUpgradeHandlers(cfg, app.GetSubspace(globalfee.ModuleName), &globalfeetypes.DefaultGenesisState().Params)
+
 	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
 	if err != nil {
 		panic(err)
 	}
 
-	if upgradeInfo.Name == "multiverse" && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
+	if upgradeInfo.Name == "v12" && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
 		storeUpgrades := store.StoreUpgrades{
-			Added: []string{icacontrollertypes.StoreKey, icahosttypes.StoreKey},
+			//remove icacontrollertypes.StoreKey, icahosttypes.StoreKey because it's update from v11
+			Added: []string{globalfee.ModuleName},
 		}
 
 		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
@@ -865,8 +866,8 @@ func (app *App) RegisterTendermintService(clientCtx client.Context) {
 
 // RegisterUpgradeHandlers returns upgrade handlers
 
-func (app *App) RegisterUpgradeHandlers(cfg module.Configurator) {
-	app.UpgradeKeeper.SetUpgradeHandler("v11", upgrades.CreateV11UpgradeHandler(app.mm, cfg, &app.ICAHostKeeper))
+func (app *App) RegisterUpgradeHandlers(cfg module.Configurator, Paramspace paramstypes.Subspace, params paramstypes.ParamSet) {
+	app.UpgradeKeeper.SetUpgradeHandler("v12", upgrades.CreateV12UpgradeHandler(app.mm, cfg, Paramspace, params))
 }
 
 // GetMaccPerms returns a copy of the module account permissions
